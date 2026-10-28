@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>College Finder Admin</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --blue: #1d4ed8;
+        --navy: #172554;
+        --light: #e0f2fe;
+        --bg: #f0f9ff;
+        --border: #bae6fd;
+        --danger: #b91c1c;
+        --success: #15803d;
+        --warning: #b45309;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: #0f172a;
+      }
+      header {
+        background: var(--blue);
+        color: #fff;
+        padding: 16px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .box {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 10px;
+        background: #fff;
+      }
+      button {
+        background: var(--blue);
+        color: #fff;
+        border: 0;
+        padding: 10px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th {
+        background: var(--light);
+        text-align: left;
+        padding: 12px;
+        color: var(--navy);
+        border-bottom: 2px solid var(--border);
+      }
+      td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      .hidden {
+        display: none;
+      }
+      .flex-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .msg {
+        font-size: 13px;
+        font-weight: bold;
+        margin-top: 5px;
+      }
+      .msg-success {
+        color: var(--success);
+      }
+      .msg-error {
+        color: var(--danger);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>College Finder Admin Dashboard</h1>
+    </header>
+
+    <main>
+      <!-- LOGIN BOX -->
+      <div
+        id="loginBox"
+        class="box"
+        style="max-width: 400px; margin: 60px auto"
+      >
+        <h2 style="margin-top: 0; color: var(--navy)">Admin Login</h2>
+        <p style="font-size: 14px; color: #666">
+          Paste your Supabase publishable key or legacy anon public key to
+          access the dashboard.
+        </p>
+        <input id="adminKey" type="password" placeholder="sb_publishable_..." />
+        <button onclick="start()" style="width: 100%">Enter Dashboard</button>
+        <p id="loginMsg" class="msg msg-error"></p>
+      </div>
+
+      <!-- MAIN APP -->
+      <div id="app" class="hidden">
+        <!-- SECTION 1: APPLICATIONS -->
+        <div class="box">
+          <h2 style="margin-top: 0; color: var(--navy)">
+            Student Applications
+          </h2>
+          <div style="overflow-x: auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ref & Applicant</th>
+                  <th>College & Program</th>
+                  <th>Contact</th>
+                  <th>Document</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="subsBody">
+                <tr>
+                  <td colspan="5">Loading applications...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- SECTION 2: MANAGE COLLEGE FORMS -->
+        <div class="box">
+          <h2 style="margin-top: 0; color: var(--navy)">
+            Manage College Forms
+          </h2>
+          <p style="font-size: 14px; color: #666; margin-bottom: 15px">
+            Paste a Google Drive or PDF link for a college. Students will see a
+            "Download Form" button in the app.
+          </p>
+
+          <div class="flex-row" style="margin-bottom: 10px">
+            <select
+              id="collegeSelect"
+              style="flex: 1; margin-bottom: 0"
+            ></select>
+          </div>
+
+          <div class="flex-row">
+            <input
+              id="formLinkInput"
+              type="text"
+              placeholder="https://drive.google.com/..."
+              style="flex: 1; margin-bottom: 0"
+            />
+            <button onclick="saveFormLink()">Save Link</button>
+          </div>
+          <p id="saveMsg" class="msg"></p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // Your Supabase URL
+      const SUPABASE_URL = "https://xfojllrhuqypegwwicp.supabase.co";
+      let supabaseClient = null;
+
+      function isPublicKey(key) {
+        if (key.startsWith("sb_publishable_")) return true;
+
+        const parts = key.split(".");
+        if (parts.length !== 3) return false;
+
+        try {
+          const payload = parts[1]
+            .replace(/-/g, "+")
+            .replace(/_/g, "/")
+            .padEnd(Math.ceil(parts[1].length / 4) * 4, "=");
+          return JSON.parse(atob(payload)).role === "anon";
+        } catch {
+          return false;
+        }
+      }
+
+      async function start() {
+        const key = document.getElementById("adminKey").value.trim();
+        const loginMsg = document.getElementById("loginMsg");
+
+        if (!isPublicKey(key)) {
+          loginMsg.innerText =
+            "Enter a Supabase publishable key or legacy anon public key.";
+          return;
+        }
+
+        if (typeof supabase === "undefined" || !supabase.createClient) {
+          loginMsg.innerText =
+            "Could not load the Supabase client. Check your connection and try again.";
+          return;
+        }
+
+        supabaseClient = supabase.createClient(SUPABASE_URL, key);
+        document.getElementById("loginBox").classList.add("hidden");
+        document.getElementById("app").classList.remove("hidden");
+        loginMsg.innerText = "";
+
+        loadApplications();
+        loadCollegesForDropdown();
+      }
+
+      // ==========================================
+      // 1. APPLICATIONS LOGIC
+      // ==========================================
+      async function loadApplications() {
+        const tbody = document.getElementById("subsBody");
+        tbody.innerHTML = '<tr><td colspan="5">Loading...</td></tr>';
+
+        const { data, error } = await supabaseClient
+          .from("applications")
+          .select("*, colleges(name)")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          tbody.innerHTML = `<tr><td colspan="5" style="color:red">Error: ${error.message}</td></tr>`;
+          return;
+        }
+
+        if (data.length === 0) {
+          tbody.innerHTML =
+            '<tr><td colspan="5">No applications submitted yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data
+          .map(
+            (app) => `
+    <tr>
+      <td>
+        <strong style="color:var(--blue)">${app.reference_no || "N/A"}</strong><br>
+        <strong>${app.full_name}</strong><br>
+        <small style="color:#666">${app.email}</small><br>
+        <small style="color:#666">${new Date(app.created_at).toLocaleDateString()}</small>
+      </td>
+      <td>
+        <strong>${app.colleges?.name || "Unknown College"}</strong><br>
+        <small style="color:#666">${app.program}</small>
+      </td>
+      <td>
+        ${app.phone}
+      </td>
+      <td>
+        ${
+          app.document_path
+            ? `<button onclick="openDoc('${app.document_path}')" style="padding:6px 10px; font-size:12px;">View File</button>`
+            : "None"
+        }
+      </td>
+      <td>
+        <select onchange="updateStatus('${app.id}', this.value)" style="margin-bottom:0; padding:8px;">
+          <option value="Submitted" ${app.status === "Submitted" ? "selected" : ""}>Submitted</option>
+          <option value="Under review" ${app.status === "Under review" ? "selected" : ""}>Under review</option>
+          <option value="Accepted" ${app.status === "Accepted" ? "selected" : ""}>Accepted</option>
+          <option value="Rejected" ${app.status === "Rejected" ? "selected" : ""}>Rejected</option>
+        </select>
+      </td>
+    </tr>
+  `
+          )
+          .join("");
+      }
+
+      async function updateStatus(id, newStatus) {
+        const { error } = await supabaseClient
+          .from("applications")
+          .update({ status: newStatus })
+          .eq("id", id);
+
+        if (error) alert("Failed to update: " + error.message);
+      }
+
+      async function openDoc(path) {
+        const { data, error } = await supabaseClient.storage
+          .from("application-documents")
+          .createSignedUrl(path, 60);
+
+        if (error) alert("Could not open document: " + error.message);
+        else window.open(data.signedUrl, "_blank");
+      }
+
+      // ==========================================
+      // 2. COLLEGE FORMS LOGIC
+      // ==========================================
+      async function loadCollegesForDropdown() {
+        const select = document.getElementById("collegeSelect");
+
+        const { data, error } = await supabaseClient
+          .from("colleges")
+          .select("id, name, form_link")
+          .order("name");
+
+        if (error) {
+          select.innerHTML = '<option value="">Could not load colleges</option>';
+          const msg = document.getElementById("saveMsg");
+          msg.className = "msg msg-error";
+          msg.innerText = "Could not load colleges: " + error.message;
+          return;
+        }
+
+        select.innerHTML =
+          '<option value="">-- Select a College --</option>' +
+          (data || [])
+            .map(
+              (c) =>
+                `<option value="${c.id}" data-link="${c.form_link || ""}">${c.name}</option>`
+            )
+            .join("");
+
+        // When user selects a college, fill the input with its current link
+        select.addEventListener("change", (e) => {
+          const selectedOption = e.target.options[e.target.selectedIndex];
+          document.getElementById("formLinkInput").value =
+            selectedOption.getAttribute("data-link") || "";
+          document.getElementById("saveMsg").innerText = "";
+        });
+      }
+
+      async function saveFormLink() {
+        const collegeId = document.getElementById("collegeSelect").value;
+        const link = document.getElementById("formLinkInput").value.trim();
+        const msg = document.getElementById("saveMsg");
+
+        if (!collegeId) {
+          msg.className = "msg msg-error";
+          msg.innerText = "Please select a college first.";
+          return;
+        }
+
+        const { error } = await supabaseClient
+          .from("colleges")
+          .update({ form_link: link })
+          .eq("id", collegeId);
+
+        if (error) {
+          msg.className = "msg msg-error";
+          msg.innerText = "Error: " + error.message;
+        } else {
+          msg.className = "msg msg-success";
+          msg.innerText = "Link saved successfully!";
+          setTimeout(() => {
+            msg.innerText = "";
+          }, 3000);
+
+          // Update the dropdown memory
+          const select = document.getElementById("collegeSelect");
+          const selectedOption = select.options[select.selectedIndex];
+          selectedOption.setAttribute("data-link", link);
+        }
+      }
+    </script>
+  </body>
+</html>

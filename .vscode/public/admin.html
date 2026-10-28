@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>College Finder Admin</title>
+    <!-- Import Supabase JS Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+      :root {
+        --blue: #1d4ed8;
+        --navy: #1e3a8a;
+        --sky: #38bdf8;
+        --light: #e0f2fe;
+        --bg: #f0f9ff;
+        --border: #bae6fd;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: #0f172a;
+      }
+      header {
+        background: var(--blue);
+        color: #fff;
+        padding: 14px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      main {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 16px;
+      }
+      .box {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        padding: 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-size: 14px;
+        margin-bottom: 8px;
+      }
+      button {
+        background: var(--blue);
+        color: #fff;
+        border: 0;
+        padding: 9px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      .tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+      .tabs button {
+        background: var(--light);
+        color: var(--navy);
+      }
+      .tabs button.on {
+        background: var(--blue);
+        color: #fff;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th {
+        background: var(--light);
+        text-align: left;
+      }
+      th,
+      td {
+        padding: 8px;
+        border-bottom: 1px solid var(--border);
+      }
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>College Finder Admin</h1>
+    </header>
+
+    <main>
+      <!-- LOGIN -->
+      <div
+        id="loginBox"
+        class="box"
+        style="max-width: 360px; margin: 40px auto"
+      >
+        <h3>Admin Access</h3>
+        <p style="font-size: 12px; color: #666">
+          Enter the Supabase Publishable Key to view admin data.
+        </p>
+        <input id="adminKey" type="password" placeholder="sb_publishable_..." />
+        <button onclick="start()">Enter Dashboard</button>
+        <p id="loginMsg" style="color: #dc2626"></p>
+      </div>
+
+      <!-- APP -->
+      <div id="app" class="hidden">
+        <div class="tabs">
+          <button class="on" onclick="showTab('subs')">Applications</button>
+        </div>
+
+        <!-- SUBMISSIONS -->
+        <div id="p-subs" class="box">
+          <h3>Submitted applications</h3>
+          <div style="overflow-x: auto">
+            <table>
+              <thead>
+                <tr>
+                  <th>Applicant</th>
+                  <th>College ID</th>
+                  <th>Program</th>
+                  <th>Phone</th>
+                  <th>Date</th>
+                  <th>Document</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="subsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      // --- SETUP SUPABASE ---
+      const SUPABASE_URL = "https://xfojllrhuqypegwwicp.supabase.co"; // Replace with your correct URL if different
+      let supabaseClient = null;
+
+      // --- APP LOGIC ---
+      async function start() {
+        const key = document.getElementById("adminKey").value;
+        if (!key.startsWith("sb_publishable_")) {
+          document.getElementById("loginMsg").innerText =
+            "Please enter a valid publishable key";
+          return;
+        }
+
+        supabaseClient = supabase.createClient(SUPABASE_URL, key);
+
+        document.getElementById("loginBox").classList.add("hidden");
+        document.getElementById("app").classList.remove("hidden");
+
+        loadSubmissions();
+      }
+
+      async function loadSubmissions() {
+        const tbody = document.getElementById("subsBody");
+        tbody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+
+        // Fetch applications, and join the colleges table to get the college name
+        const { data, error } = await supabaseClient
+          .from("applications")
+          .select("*, colleges(name)")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          tbody.innerHTML = `<tr><td colspan="7" style="color:red">Error: ${error.message}</td></tr>`;
+          return;
+        }
+
+        if (data.length === 0) {
+          tbody.innerHTML =
+            '<tr><td colspan="7">No applications found.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data
+          .map(
+            (app) => `
+    <tr>
+      <td><b>${app.full_name}</b><br><small>${app.email}</small></td>
+      <td>${app.colleges?.name || "Unknown College"}</td>
+      <td>${app.program}</td>
+      <td>${app.phone}</td>
+      <td>${new Date(app.created_at).toLocaleDateString()}</td>
+      <td>
+        ${
+          app.document_path
+            ? `<button onclick="openDoc('${app.document_path}')">View Doc</button>`
+            : "None"
+        }
+      </td>
+      <td>
+        <select onchange="updateStatus('${app.id}', this.value)">
+          <option value="Submitted" ${app.status === "Submitted" ? "selected" : ""}>Submitted</option>
+          <option value="Under review" ${app.status === "Under review" ? "selected" : ""}>Under review</option>
+          <option value="Accepted" ${app.status === "Accepted" ? "selected" : ""}>Accepted</option>
+          <option value="Rejected" ${app.status === "Rejected" ? "selected" : ""}>Rejected</option>
+        </select>
+      </td>
+    </tr>
+  `
+          )
+          .join("");
+      }
+
+      async function updateStatus(id, newStatus) {
+        const { error } = await supabaseClient
+          .from("applications")
+          .update({ status: newStatus })
+          .eq("id", id);
+
+        if (error) {
+          alert("Failed to update status: " + error.message);
+        } else {
+          alert("Status updated successfully!");
+        }
+      }
+
+      async function openDoc(path) {
+        const { data, error } = await supabaseClient.storage
+          .from("application-documents")
+          .createSignedUrl(path, 60);
+
+        if (error) {
+          alert("Could not open document: " + error.message);
+        } else {
+          window.open(data.signedUrl, "_blank");
+        }
+      }
+    </script>
+  </body>
+</html>
